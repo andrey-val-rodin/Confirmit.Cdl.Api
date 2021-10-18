@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "cdl-api.fullname" . }}
+  labels: {{ include "cdl-api.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "cdl-api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{ include "cdl-api.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      volumes:
+      - name: bootstrap-secrets
+        secret:
+          secretName: horizons-secrets
+      - name: nginx-proxy-config
+        configMap:
+          name: {{ template "cdl-api.fullname" . }}
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-pid
+        emptyDir:
+          medium: "Memory"
+      imagePullSecrets:
+      - name: horizons-imagepullsecret
+      serviceAccountName: {{ include "cdl-api.serviceAccountName" . }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext: {{- toYaml .Values.appSecurityContext | nindent 12 }}
+          image: "{{ .Values.global.registry }}/{{ .Values.appImage.repository }}:{{ default .Chart.AppVersion .Values.appImage.tagOverride }}"
+          imagePullPolicy: {{ .Values.appImage.pullPolicy }}
+          ports:
+            - name: http-app
+              containerPort: 5000
+              protocol: TCP
+          env:
+          - name: ASPNETCORE_URLS 
+            value: "http://+:5000"
+          - name: Confirmit__SQLServerName
+            valueFrom:
+                configMapKeyRef:
+                  name: horizons-config
+                  key: Confirmit__SQLServerName
+          - name: Confirmit__SurveyC
+            valueFrom:
+                configMapKeyRef:
+                  name: horizons-config
+                  key: Confirmit__SurveyC
+          - name: Serilog__MinimumLevel__Default
+            value: {{ quote .Values.logLevel }}
+{{- with .Values.env }}
+{{ toYaml . | indent 10 }}
+{{- end }}
+          volumeMounts:
+          - name: bootstrap-secrets
+            mountPath: /etc/confirmit/secrets
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: 8080
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.appResources | nindent 12 }}
+        - name: {{ .Chart.Name }}-proxy
+          securityContext: {{- toYaml .Values.proxySecurityContext | nindent 12 }}
+          image: "{{ default .Values.global.proxyImage.repository .Values.proxyImage.repositoryOverride }}:{{ default .Values.global.proxyImage.tag .Values.proxyImage.tagOverride }}"
+          imagePullPolicy: {{ default .Values.global.proxyImage.pullPolicy .Values.proxyImage.pullPolicyOverride }}
+          ports:
+          - name: http-proxy
+            containerPort: 8000
+            protocol: TCP
+          volumeMounts:
+          - name: nginx-proxy-config
+            mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+          - name: nginx-cache
+            mountPath: /var/cache/nginx
+          - name: nginx-pid
+            mountPath: /var/run/nginx
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: 8090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: 8090
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+          resources: {{ toYaml .Values.proxyResources | nindent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}

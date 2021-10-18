@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "cdl-api.fullname" . }}
+  labels: {{ include "cdl-api.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "nginx.conf").AsConfig | indent 2 }}

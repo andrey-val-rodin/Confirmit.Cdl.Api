@@ -1,0 +1,14 @@
+**
+!code/
+**/.vs/
+**/bin/
+**/obj/
+**/TestResults/
+**/confirmit_logs/
+**/*.csproj.user
+**/appsettings.Development.json
+**/*.nupkg
+**/*.zip
+**/*.tgz
+!NuGet.config
+!OctopusDeploy/

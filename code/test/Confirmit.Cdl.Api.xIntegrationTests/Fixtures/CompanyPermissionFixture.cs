@@ -1,0 +1,57 @@
+﻿using Confirmit.Cdl.Api.Authorization;
+using Confirmit.Cdl.Api.ViewModel;
+using Confirmit.Cdl.Api.xIntegrationTests.Clients;
+using Confirmit.Cdl.Api.xIntegrationTests.Framework;
+using Confirmit.NetCore.Client;
+using JetBrains.Annotations;
+using Microsoft.Extensions.DependencyInjection;
+using System.Threading.Tasks;
+
+namespace Confirmit.Cdl.Api.xIntegrationTests.Fixtures
+{
+    [UsedImplicitly]
+    public class CompanyPermissionFixture : BaseFixture
+    {
+        private readonly SharedFixture _sharedFixture;
+        public long DocumentId;
+
+        public CompanyPermissionFixture(SharedFixture sharedFixture)
+        {
+            _sharedFixture = sharedFixture;
+        }
+
+        protected override void AddLocalServices(IServiceCollection services)
+        {
+            var uri = GetServiceUri();
+            services.AddConfirmitClient<ICdl>(uri);
+        }
+
+        public override async Task InitializeAsync()
+        {
+            await base.InitializeAsync();
+
+            using var scope = CreateScope();
+            var client = new CdlServiceClient(scope);
+
+            await _sharedFixture.UseAdminAsync(scope);
+
+            DocumentId = (await client.PostDocumentAsync()).Id;
+
+            // Confirmit
+            await client.PutCompanyPermissionAsync(DocumentId,
+                new PermissionDto
+                    { Id = _sharedFixture.Admin.CompanyId, Permission = Permission.View });
+
+            // TestCompany
+            await client.PutCompanyPermissionAsync(DocumentId,
+                new PermissionDto
+                    { Id = _sharedFixture.TestCompany.Id, Permission = Permission.Manage });
+
+            // NormalUser2 (TestCompany2)
+            await client.PatchUserPermissionsAsync(DocumentId, new[]
+            {
+                new UserPermissionDto { Id = _sharedFixture.NormalUser2.Id, Permission = Permission.View }
+            });
+        }
+    }
+}
